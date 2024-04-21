@@ -1,0 +1,44 @@
+RNG_SEED: 54
+
+OUTPUT_DIR: './log_traffic'
+
+
+DATASET:
+  name: 'traffic'
+  subdatasets: ["traffic"]
+
+TRAIN:
+  enable: True
+  save_model: False
+  method: 'MMR'
+  dataset_path: '/media/dm/新加卷1/MMR/data/traffic/Train1.npy'
+  backbone: 'wideresnet50'
+
+  MMR:
+    layers_to_extract_from : ["layer1", "layer2", "layer3"]
+    feature_compression : False
+    scale_factors : (4.0, 2.0, 1.0)
+    FPN_output_dim : (256, 512, 1024)
+    load_pretrain_model : True
+    model_chkpt : "/media/dm/新加卷1/MMR/data/mae_visualize_vit_base.pth"
+    finetune_mask_ratio : 0.6
+    test_mask_ratio : 0.
+
+
+TRAIN_SETUPS:
+  batch_size: 128
+  num_workers: 1
+  learning_rate: 1e-5
+  epochs: 100
+  weight_decay: 0.05
+  warmup_epochs: 20
+
+
+TEST:
+  enable: False
+  method: 'MMR'
+  dataset_path: '/media/dm/新加卷1/MMR/data/traffic/Test1.npy'
+
+
+TEST_SETUPS:
+  batch_size: 256

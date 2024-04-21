@@ -25,7 +25,7 @@ from anomalib.models.padim import Padim
 from anomalib.models.reverse_distillation import ReverseDistillation
 from anomalib.models.stfpm import Stfpm
 from anomalib.models.mfad import Mfad
-
+from anomalib.models.arcade import Arcade
 
 __all__ = [
     "Cflow",
@@ -37,6 +37,7 @@ __all__ = [
     "ReverseDistillation",
     "Stfpm",
     "Mfad",
+    "Arcade",
 ]
 
 logger = logging.getLogger(__name__)

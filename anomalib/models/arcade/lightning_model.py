@@ -2,22 +2,24 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import torch
 from omegaconf import DictConfig, ListConfig
 from pytorch_lightning.callbacks import Callback, EarlyStopping
 from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 from torch import Tensor, optim
+from torch.autograd import Variable
 
 from anomalib.models.components import AnomalyModule
-from anomalib.models.mfad.loss import DiscriminatorLoss, GeneratorLoss
+from anomalib.models.arcade.loss import DiscriminatorLoss, GeneratorLoss
 
-from .torch_model import MfadModel
+from .torch_model import ArcadeModel
 
 logger = logging.getLogger(__name__)
 
 
-class Mfad(AnomalyModule):
-    """PL Lightning Module for the MFAD Algorithm.
+class Arcade(AnomalyModule):
+    """PL Lightning Module for the ArcadeModel Algorithm.
 
     Args:
         batch_size (int): Batch size.
@@ -26,6 +28,9 @@ class Mfad(AnomalyModule):
         latent_vec_size (int): Size of autoencoder latent vector.
         extra_layers (int, optional): Number of extra layers for encoder/decoder. Defaults to 0.
         add_final_conv_layer (bool, optional): Add convolution layer at the end. Defaults to True.
+        wssim (int, optional): 
+        wcritic (int, optional): 
+        wGP (int, optional):
     """
 
     def __init__(
@@ -37,16 +42,16 @@ class Mfad(AnomalyModule):
         num_input_channels: int,
         extra_layers: int = 0,
         add_final_conv_layer: bool = True,
-        wadv: int = 1,
-        wcon: int = 50,
-        wlat: int = 1,
+        wssim: int = 1,
+        wcritic: int = 10,
+        wGP: int = 100,
         lr: float = 0.0002,
         beta1: float = 0.5,
         beta2: float = 0.999,
     ) -> None:
         super().__init__()
 
-        self.model: MfadModel = MfadModel(
+        self.model: ArcadeModel = ArcadeModel(
             input_size=input_size,
             num_input_channels=num_input_channels,
             n_features=n_features,
@@ -61,10 +66,10 @@ class Mfad(AnomalyModule):
         self.min_scores: Tensor = torch.tensor(float("inf"), dtype=torch.float32)  # pylint: disable=not-callable
         self.max_scores: Tensor = torch.tensor(float("-inf"), dtype=torch.float32)  # pylint: disable=not-callable
 
-        self.generator_loss = GeneratorLoss(wadv, wcon, wlat)
-        self.discriminator_loss = DiscriminatorLoss()
+        self.generator_loss = GeneratorLoss(wcritic=wcritic, wssim=wssim)
+        self.discriminator_loss = DiscriminatorLoss(wGP=wGP)
 
-        # TODO: LR should be part of optimizer in config.yaml!
+
         self.learning_rate = lr
         self.beta1 = beta1
         self.beta2 = beta2
@@ -114,15 +119,36 @@ class Mfad(AnomalyModule):
         del batch_idx  # `batch_idx` variables is not used.
 
         # forward pass
-        padded, fake, latent_i, latent_o = self.model(batch["data"])
-        pred_real, _ = self.model.discriminator(padded)
+        x, fake = self.model(batch["data"])
+        
+        pred_real, _ = self.model.discriminator(x)
 
         if optimizer_idx == 0:  # Discriminator
             pred_fake, _ = self.model.discriminator(fake.detach())
-            loss = self.discriminator_loss(pred_real, pred_fake)
+
+            m = 64
+            for i in range(m):
+                batch_size = batch["data"].shape[0]
+                eta = torch.FloatTensor(batch_size,1,1,1).uniform_(0,1)
+                eta = eta.expand(batch_size, x.detach().size(1), x.detach().size(2), x.detach().size(3))
+                eta = eta.cuda()
+
+                interpolated = eta * x.detach() + ((1 - eta) * fake.detach())
+                interpolated = interpolated.cuda()
+                # define it to calculate gradient
+                interpolated = Variable(interpolated, requires_grad=True)
+
+                # calculate probability of interpolated examples
+                prob_interpolated, _ = self.model.discriminator(interpolated)
+
+                if i == 0:
+                    loss = self.discriminator_loss(pred_real, pred_fake, interpolated=interpolated, prob_interpolated=prob_interpolated)
+                else:
+                    loss += self.discriminator_loss(pred_real, pred_fake, interpolated=interpolated, prob_interpolated=prob_interpolated)
+                
         else:  # Generator
             pred_fake, _ = self.model.discriminator(fake)
-            loss = self.generator_loss(latent_i, latent_o, padded, fake, pred_real, pred_fake)
+            loss = self.generator_loss(x, fake, pred_fake)
 
         self.log("train_loss", loss.item(), on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss}
@@ -168,9 +194,15 @@ class Mfad(AnomalyModule):
 
     def test_epoch_end(self, outputs: EPOCH_OUTPUT) -> EPOCH_OUTPUT:
         """Normalize outputs based on min/max values."""
+        pred_label = []
         logger.info("Normalizing test outputs based on min/max values.")
         for prediction in outputs:
             prediction["pred_scores"] = self._normalize(prediction["pred_scores"])
+            temp = prediction["pred_scores"] >= 0.5019
+            pred_label.append(temp.int().cpu().numpy())
+        # 0.9569-datacon   0.2935-IDS2017 0.5019-USTC
+        np.savetxt(f'MMR_output_predict.csv', np.concatenate(pred_label)[np.newaxis, :], delimiter=',')
+        
         super().test_epoch_end(outputs)
         return outputs
 
@@ -189,8 +221,8 @@ class Mfad(AnomalyModule):
         return scores
 
 
-class MfadLightning(Mfad):
-    """PL Lightning Module for the MFAD Algorithm.
+class ArcadeLightning(Arcade):
+    """PL Lightning Module for the Arcade Algorithm.
 
     Args:
         hparams (DictConfig | ListConfig): Model params
@@ -205,9 +237,9 @@ class MfadLightning(Mfad):
             latent_vec_size=hparams.model.latent_vec_size,
             extra_layers=hparams.model.extra_layers,
             add_final_conv_layer=hparams.model.add_final_conv,
-            wadv=hparams.model.wadv,
-            wcon=hparams.model.wcon,
-            wlat=hparams.model.wlat,
+            wssim=hparams.model.wssim,
+            wcritic=hparams.model.wcritic,
+            wGP=hparams.model.wGP,
             lr=hparams.model.lr,
             beta1=hparams.model.beta1,
             beta2=hparams.model.beta2,

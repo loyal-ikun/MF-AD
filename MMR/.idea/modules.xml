@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/MMR.iml" filepath="$PROJECT_DIR$/.idea/MMR.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../graduation/.idea/graduation.iml" filepath="$PROJECT_DIR$/../graduation/.idea/graduation.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../pytorch-wgan/.idea/pytorch-wgan.iml" filepath="$PROJECT_DIR$/../pytorch-wgan/.idea/pytorch-wgan.iml" />
+    </modules>
+  </component>
+</project>
