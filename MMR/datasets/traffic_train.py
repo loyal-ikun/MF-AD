@@ -28,10 +28,9 @@ class Traffic_Train_DataDataset(torch.utils.data.Dataset):
         self.split = split
         self.classnames_to_use = [classname] if classname is not None else _CLASSNAMES
         self.cfg = cfg
-        self.array = np.load(cfg.TRAIN.dataset_path)  # [10000, 8, 3, 40, 40]
+        self.array = np.load(cfg.TRAIN.dataset_path) 
 
         # todo: demo
-        self.array = self.array[4950: 5050, :, :, :, :]
 
         self.array = self.array.reshape(self.array.shape[0] * 8, 3, 64,
                                                              64)

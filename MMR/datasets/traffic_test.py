@@ -31,7 +31,6 @@ class Traffic_Test_DataDataset(torch.utils.data.Dataset):
         self.array = np.load(cfg.TEST.dataset_path)
 
         # todo: demo
-        self.array = self.array[4950: 5050, :, :, :, :]
 
         self.classname, self.is_anomaly = self.get_image_data()
 
